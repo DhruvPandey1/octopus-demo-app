@@ -1,38 +1,56 @@
-name: Build and Push ECR
+name: Build and Push to ECR
 
 on:
   push:
     branches:
+      - dev
+      - qa
       - main
+
+env:
+  AWS_REGION: us-east-1
+  ECR_REPOSITORY: octopus-demo-app
 
 jobs:
   build:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
+      - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: AWS Login
+      - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.AWS_REGION }}
+          aws-region: ${{ env.AWS_REGION }}
 
-      - name: Login to ECR
+      - name: Login to Amazon ECR
+        id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Set Image Tag
+        id: vars
+        run: |
+          if [ "${GITHUB_REF_NAME}" = "main" ]; then
+            echo "TAG=prod" >> $GITHUB_ENV
+          elif [ "${GITHUB_REF_NAME}" = "qa" ]; then
+            echo "TAG=qa" >> $GITHUB_ENV
+          else
+            echo "TAG=dev" >> $GITHUB_ENV
+          fi
 
       - name: Build Docker Image
         run: |
-          docker build -t demo-app .
+          docker build -t $ECR_REPOSITORY:$TAG .
 
       - name: Tag Image
         run: |
-          docker tag demo-app:latest \
-          174376948398.dkr.ecr.us-east-1.amazonaws.com/octopus-demo-app:latest
+          docker tag $ECR_REPOSITORY:$TAG \
+          ${{ steps.login-ecr.outputs.registry }}/$ECR_REPOSITORY:$TAG
 
       - name: Push Image
         run: |
           docker push \
-          174376948398.dkr.ecr.us-east-1.amazonaws.com/octopus-demo-app:latest
+          ${{ steps.login-ecr.outputs.registry }}/$ECR_REPOSITORY:$TAG
